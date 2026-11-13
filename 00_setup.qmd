@@ -1,0 +1,127 @@
+---
+title: "Setup Test"
+subtitle: "Data Visualisation: Principles, Practices and Applications"
+author: "Julia Schulte-Cloos"
+date: "9 November 2026"
+format:
+  html:
+    self-contained: true
+    toc: true
+    toc-title: "Contents"
+    theme: cosmo
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+This document has two purposes. **Work through both before 16 November.**
+
+1. Verify that your R environment works
+2. Set up GitHub Copilot for use during the workshop
+
+---
+
+## Part 1: Package installation
+
+Run the chunk below. It installs and loads every package used across the two workshop days. If any package fails, note the error message and reach out before 16 November.
+
+```{r}
+#| label: setup
+if (!require("pacman")) install.packages("pacman")
+
+pacman::p_load(
+  # Core
+  tidyverse,
+  haven,
+  # Data
+  gapminder,
+  palmerpenguins,
+  carData,
+  WDI,
+  # Plot extensions
+  patchwork,
+  ggrepel,
+  ggtext,
+  ggforce,
+  geomtextpath,
+  ggridges,
+  ggdist,
+  waffle,
+  # Tables
+  kableExtra,
+  # Fonts
+  showtext,
+  sysfonts,
+  # Interactive
+  ggiraph,
+  plotly,
+  gganimate,
+  dygraphs,
+  leaflet,
+  # Spatial
+  sf
+)
+```
+
+**Note:** `sf` occasionally requires additional system libraries. If it fails with a message about `GDAL` or `PROJ`, see the [sf installation guide](https://r-spatial.github.io/sf/#installing) for your operating system.
+
+---
+
+## Part 2: Test plot
+
+Render this document (the **Render** button in RStudio, or `quarto render` in the terminal). The plot below should appear in the output. If it does, your environment is ready.
+
+```{r}
+#| label: test-plot
+#| fig-width: 7
+#| fig-height: 4.5
+
+gapminder |>
+  filter(year == 2007) |>
+  ggplot(aes(x = gdpPercap, y = lifeExp,
+             size = pop, colour = continent)) +
+  geom_point(alpha = 0.7) +
+  scale_x_log10(labels = scales::label_dollar()) +
+  scale_size(range = c(2, 12), guide = "none") +
+  labs(
+    title = "Health and wealth across countries (2007)",
+    subtitle = "Each point is one country; size = population",
+    x = "GDP per capita (log scale)",
+    y = "Life expectancy at birth",
+    colour = NULL
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+This is a version of the Gapminder chart you analyzed in session 1 (Application 1). Can you identify which variable is mapped to which aesthetic?
+
+---
+
+## Part 3: GitHub Copilot setup
+
+As a registered student, you have free access to GitHub Copilot through the **GitHub Student Developer Pack**.
+
+### Step 1 — Activate your student access
+
+1. Go to [github.com/education](https://github.com/education) and click **Get student benefits**.
+2. Apply with your university email address. Approval is usually instant if your `.edu` address is recognised; otherwise upload a proof of enrolment.
+3. Once approved, go to [github.com/settings/copilot](https://github.com/settings/copilot) and enable Copilot for your account (it should show as free under your student plan).
+
+### Step 2 — Enable Copilot in RStudio
+
+Copilot is built into RStudio 2023.09 and later. Update RStudio first if needed ([posit.co/download/rstudio-desktop](https://posit.co/download/rstudio-desktop/)).
+
+1. *Tools* → *Global Options* → *Copilot*
+2. Tick **Enable GitHub Copilot**
+3. Click **Sign In** and follow the browser prompt to authorise with your GitHub account
+
+Once enabled, Copilot suggests completions as you type. Accept with **Tab**, dismiss with **Escape**.
+
+### A note on data privacy
+
+Copilot sends the code you are currently editing to GitHub's servers to generate suggestions. **Do not use it when working with restricted-access data** (survey data with a data use agreement, ethics-board-protected data, or anything you are not permitted to share). We will discuss this in the workshop. For ordinary ggplot2 code working with public datasets, it is fine.
+
+---
+
+*Any problems with the setup? Reach out before 16 November.*
