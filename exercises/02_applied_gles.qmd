@@ -1085,13 +1085,13 @@ affective_polarization_plot_data <- affective_polarization %>%
   mutate(
     eval = fct_relevel(
       eval,
-      c("AfD", "BSW", "CDU/CSU", "FDP", "Greens", "SPD", "The Left")
+      c("The Left", "SPD", "Greens", "BSW", "FDP", "CDU/CSU", "AfD")
     ),
     vote = fct_relevel(
       vote,
-      c("AfD", "BSW", "CDU/CSU", "FDP", "Greens", "SPD", "The Left")
+      c("The Left", "SPD", "Greens", "BSW", "FDP", "CDU/CSU", "AfD")
     )
-  ) 
+  )
 
 
 
@@ -1424,7 +1424,13 @@ boot_summary <- boot_coefs %>%
     lower_ci = quantile(estimate, 0.025, na.rm = TRUE),
     upper_ci = quantile(estimate, 0.975, na.rm = TRUE),
     .groups = "drop"
-  )
+  ) %>%
+  # a coefficient is significant if its 95% CI does not cross zero
+  mutate(significant = lower_ci > 0 | upper_ci < 0)
+
+# join significance flag onto boot_coefs so all geoms can map alpha
+boot_coefs <- boot_coefs %>%
+  left_join(select(boot_summary, term_label, significant), by = "term_label")
 ```
 
 After having bootstrapped the regression coefficients, we can visualize the results using a half-eye plot again. The half-eye plot shows the distribution of the bootstrapped coefficient estimates for each predictor. Additionally, we will add point ranges to indicate the median and 95% confidence intervals.
@@ -1434,14 +1440,14 @@ regression_bootstrap <- ggplot(
   data = boot_coefs,
   aes(
     x = estimate,
-    y = fct_rev(term_label)
+    y = fct_rev(term_label),
+    alpha = significant
   )
 ) +
   ggdist::stat_halfeye(
     adjust = 0.5,
     .width = 0,
     justification = -0.05,
-    alpha = 1,
     fill = "#009ee0"
   ) +
   ggdist::stat_dots(
@@ -1454,12 +1460,13 @@ regression_bootstrap <- ggplot(
   ) +
   geom_pointrange(
     data = boot_summary,
-    aes(x = median_estimate, xmin = lower_ci, xmax = upper_ci),
+    aes(x = median_estimate, xmin = lower_ci, xmax = upper_ci, alpha = significant),
     shape = 21,
     linewidth = 0.6,
     fill = "#009ee0",
     color = "#007ab3"
   ) +
+  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2), guide = "none") +
   # add a vertical gray line to x = 0
   geom_vline(xintercept = 0, color = "gray70", linetype = "solid", linewidth = 0.7) +
   labs(
@@ -1467,7 +1474,7 @@ regression_bootstrap <- ggplot(
     subtitle = "Predictors of Far-Right Attitudes",
     x = "Coefficient Estimate",
     y = NULL,
-    caption = "Source: German Longitudinal Election Study - ZA10100"
+    caption = "Source: German Longitudinal Election Study - ZA10100 · Faded distributions indicate a 95% CI that crosses zero"
   ) +
   theme_gles() +
   theme(
@@ -1483,5 +1490,101 @@ regression_bootstrap <- ggplot(
     axis.ticks.y       = element_blank()
   )
 
-regression_bootstrap 
+regression_bootstrap
+
+```
+
+## Dumbbell Plot: East-West Differences in Vote Shares for Each Party
+
+One of the most striking patterns in German electoral geography is the persistent gap between East and West Germany in party support. A dumbbell plot is well-suited for exactly this kind of two-group comparison: for each party on the y-axis, two points — one per region — are connected by a segment, making the size and direction of the gap immediately legible at a glance.
+
+We calculate the second-vote share of each of the seven major parties separately for East and West German respondents using the `ostwest2` variable. Parties are ordered by their mean vote share across both regions, placing the largest parties at the top. The East/West distinction is encoded in color using the viridis scale, deliberately avoiding the conventional party colors so the regional encoding does not visually compete with any single party.
+
+```{r}
+vote_share_region <- GLES %>%
+  mutate(
+    party_name = case_when(
+      q114ba == 1   ~ "CDU/CSU",
+      q114ba == 4   ~ "SPD",
+      q114ba == 5   ~ "FDP",
+      q114ba == 6   ~ "Greens",
+      q114ba == 7   ~ "The Left",
+      q114ba == 322 ~ "AfD",
+      q114ba == 392 ~ "BSW"
+    ),
+    region = case_when(
+      ostwest2 == 1 ~ "West",
+      ostwest2 == 0 ~ "East"
+    )
+  ) %>%
+  # drops respondents who voted for minor parties and those with missing region
+  filter(!is.na(party_name), !is.na(region)) %>%
+  group_by(region, party_name) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # re-group by region only so the share denominator is the regional total, not the grand total
+  group_by(region) %>%
+  mutate(vote_share = 100 * n / sum(n)) %>%
+  ungroup()
+
+# geom_segment needs both endpoints as separate columns in the same row,
+# so we pivot to wide format (one row per party, columns West and East)
+vote_share_wide <- vote_share_region %>%
+  pivot_wider(id_cols = party_name, names_from = region, values_from = vote_share)
+
+# order by East-West gap ascending → largest gap ends up at top of y-axis
+party_order_db <- vote_share_wide %>%
+  mutate(gap = abs(West - East)) %>%
+  arrange(gap) %>%
+  pull(party_name)
+
+vote_share_region <- vote_share_region %>%
+  mutate(party_name = factor(party_name, levels = party_order_db))
+vote_share_wide <- vote_share_wide %>%
+  mutate(party_name = factor(party_name, levels = party_order_db))
+
+# ggplot() is called without a global data argument because the two geoms
+# draw from different data frames (wide for the segment, long for the points)
+dumbbell_plot <- ggplot() +
+  geom_segment(
+    data = vote_share_wide,
+    aes(
+      x = West, xend = East,
+      y = party_name, yend = party_name  # identical y/yend keeps the segment horizontal
+    ),
+    color = "gray75", linewidth = 1.5
+  ) +
+  geom_point(
+    data = vote_share_region,
+    aes(x = vote_share, y = party_name, color = region),
+    size = 4
+  ) +
+  # brewer.pal(3, "BrBG") returns brown / near-white / teal; [c(1, 3)] skips the
+  # near-white midpoint so both colors are visible against the light background
+  scale_color_manual(values = RColorBrewer::brewer.pal(3, "BrBG")[c(1, 3)], name = NULL) +
+  scale_x_continuous(
+    # scale = 1 because vote_share is already in percentage points, not 0-1
+    # accuracy = 1 rounds tick labels to whole numbers (e.g. 15% not 15.3%)
+    labels = scales::label_percent(scale = 1, accuracy = 1),
+    limits = c(0, NA),
+    expand = expansion(mult = c(0.02, 0.1))
+  ) +
+  labs(
+    title    = "Party vote share in East and West Germany",
+    subtitle = "Second vote (Zweitstimme), federal election 2025",
+    x        = "Vote share",
+    y        = NULL,
+    caption  = "Source: German Longitudinal Election Study (2025)"
+  ) +
+  theme_gles() +
+  theme(
+    legend.position      = "top",
+    legend.justification = "left",
+    axis.text.y          = element_text(size = 11, color = "gray10", face = "bold"),
+    axis.title.x         = element_text(size = 11, color = "gray10"),
+    panel.grid.major.y   = element_blank(),
+    panel.grid.major.x   = element_line(color = "gray90"),
+    panel.grid.minor.x   = element_blank()
+  )
+
+dumbbell_plot
 ```
